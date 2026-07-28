@@ -90,8 +90,22 @@ npm run deploy
 
 ### 方式 C：Git 持续部署
 
-在 Cloudflare Dashboard 连接 Git 仓库：Build command 留空，Build output 目录设为 `public`。
-KV 绑定与密钥在 Pages 项目 Settings 中配置（绑定名 `RATE_LIMIT`）。
+在 Cloudflare Dashboard 连接 Git 仓库后，进入 Pages → 项目 → Settings → Builds & deployments：
+
+- **Framework preset**：None
+- **Build command**：`npx wrangler pages deploy public`
+  （切勿填 `npx wrangler deploy`——那是 Workers 命令，在 Pages 项目会直接报错；
+  也可留空由 Cloudflare 自动构建部署 `public/` 与 `functions/`）
+- **Build output directory**：`public`
+
+并在 Environment variables 配置：
+
+- `CLOUDFLARE_API_TOKEN`：授予 build 里的 wrangler 鉴权（令牌需 **Account › Cloudflare Pages: Edit** 权限）
+- Mailgun 密钥：`MAILGUN_API_KEY` / `MAILGUN_DOMAIN` / `MAIL_RECIPIENT`
+  （及可选的 `MAILGUN_REGION` / `RESTRICT_CN_ONLY`）
+
+KV 绑定请在 Settings → Functions → KV namespace bindings 关联 `RATE_LIMIT`，
+或确保构建走 `wrangler pages deploy` 以读取 `wrangler.toml` 中的绑定。
 
 ### 绑定自定义域名
 
