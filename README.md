@@ -79,9 +79,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy.ps1 -SkipSecrets
 npx wrangler kv namespace create RATE_LIMIT
 
 # 2. 配置密钥
-npx wrangler pages secret put MAILGUN_API_KEY --project-name page-wangjiang-me
-npx wrangler pages secret put MAILGUN_DOMAIN  --project-name page-wangjiang-me
-npx wrangler pages secret put MAIL_RECIPIENT  --project-name page-wangjiang-me
+npx wrangler pages secret put MAILGUN_API_KEY --project-name myhomepage
+npx wrangler pages secret put MAILGUN_DOMAIN  --project-name myhomepage
+npx wrangler pages secret put MAIL_RECIPIENT  --project-name myhomepage
 # 可选：MAILGUN_REGION（us 默认 / eu）、RESTRICT_CN_ONLY（true 默认 / false）
 
 # 3. 部署
@@ -93,7 +93,8 @@ npm run deploy
 在 Cloudflare Dashboard 连接 Git 仓库后，进入 Pages → 项目 → Settings → Builds & deployments：
 
 - **Framework preset**：None
-- **Build command**：`npx wrangler pages deploy public`
+- **Deploy command**：`npm run deploy`
+  （不要填写 `npx wrangler deploy`；这是 Workers 专用命令，会导致 Pages 项目构建失败。）
   （切勿填 `npx wrangler deploy`——那是 Workers 命令，在 Pages 项目会直接报错；
   也可留空由 Cloudflare 自动构建部署 `public/` 与 `functions/`）
 - **Build output directory**：`public`
@@ -109,7 +110,7 @@ KV 绑定请在 Settings → Functions → KV namespace bindings 关联 `RATE_LI
 
 ### 绑定自定义域名
 
-Dashboard → Pages → `page-wangjiang-me` → Custom domains → 添加 `wangjiang.me` / `www.wangjiang.me`
+Dashboard → Pages → `myhomepage` → Custom domains → 添加 `wangjiang.me` / `www.wangjiang.me`
 （域名需已托管于该 Cloudflare 账户的 DNS，脚本不含此步）。`_headers` 会随之生效。
 
 > 邮件密钥务必用 `wrangler pages secret put` 配置，切勿写入 `wrangler.toml` 或提交到仓库。
