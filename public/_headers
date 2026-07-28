@@ -1,0 +1,10 @@
+# Cloudflare Pages 自定义响应头（作用于全部静态资源）
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
+/assets/*
+  Cache-Control: public, max-age=86400
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate

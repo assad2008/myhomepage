@@ -1,0 +1,20 @@
+# Cloudflare Pages 项目配置
+# 静态站点目录为 public/，API 由 functions/ 下的 Pages Functions 提供。
+
+name = "page-wangjiang-me"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "public"
+
+# 频率限制存储（KV）
+# 首次使用前请创建命名空间并把 id 填入下方：
+#   npx wrangler kv namespace create RATE_LIMIT
+[[kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "00000000000000000000000000000000"
+preview_id = "00000000000000000000000000000000"
+
+# 说明：
+# - 密钥（MAILGUN_API_KEY / MAILGUN_DOMAIN / MAIL_RECIPIENT 等）通过
+#   `wrangler pages secret put <KEY>` 配置，不要写入此文件。
+# - 本地调试所需变量写在 .dev.vars（已加入 .gitignore，可参考 .dev.vars.example）。
