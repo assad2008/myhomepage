@@ -1,7 +1,7 @@
 # Cloudflare Pages 项目配置
 # 静态站点目录为 public/，API 由 functions/ 下的 Pages Functions 提供。
 
-name = "page-wangjiang-me"
+name = "myhomepage"
 compatibility_date = "2026-07-28"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "./public"
