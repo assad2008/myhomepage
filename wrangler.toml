@@ -4,7 +4,7 @@
 name = "page-wangjiang-me"
 compatibility_date = "2026-07-28"
 compatibility_flags = ["nodejs_compat"]
-pages_build_output_dir = "public"
+pages_build_output_dir = "./public"
 
 # 频率限制存储（KV）
 # 首次使用前请创建命名空间并把 id 填入下方：
