@@ -6,3 +6,8 @@ name = "myhomepage"
 compatibility_date = "2026-07-28"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "public"
+
+# 频率限制存储（KV）
+[[kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "8b5c265f0f3c4a7c9e9357cff323ada5"
