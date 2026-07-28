@@ -20,6 +20,8 @@
 
 09. Back To Top
 
+10. App Version
+
 =========================================================================================*/
 
 (function($){
@@ -350,5 +352,20 @@
 		e.preventDefault();
 		$("html, body").stop().animate({ scrollTop: 0 }, 800);
 	});
+
+	/*=========================================================================
+		10. App Version
+	=========================================================================*/
+	(function(){
+		var $version = $("#app-version");
+		if (!$version.length) { return; }
+		var build = window.__APP_BUILD__;
+		if (build && build.display) {
+			$version.text(build.display);
+			$version.attr("title", "Build " + (build.build || "") + " · " + (build.generatedAt || ""));
+		} else {
+			$version.text("dev").attr("title", "本地开发环境");
+		}
+	})();
 
 }(jQuery));

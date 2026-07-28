@@ -29,6 +29,8 @@
 │       ├── env.ts               # 配置 / 响应 / 类型
 │       ├── security.ts          # 净化 / IP / CSRF / 频率限制(KV)
 │       └── email.ts             # HTML / Text 邮件模板 + Mailgun 调用
+├── scripts/
+│   └── gen-version.js           # 版本号生成器（每次发布写入 public/version.js）
 ├── wrangler.toml                 # Pages 项目配置 + KV 绑定
 ├── tsconfig.json
 ├── package.json
@@ -114,6 +116,21 @@ Dashboard → Pages → `myhomepage` → Custom domains → 添加 `wangjiang.me
 （域名需已托管于该 Cloudflare 账户的 DNS，脚本不含此步）。`_headers` 会随之生效。
 
 > 邮件密钥务必用 `wrangler pages secret put` 配置，切勿写入 `wrangler.toml` 或提交到仓库。
+
+## 版本号（构建戳）
+
+页面底部会显示当前发布版本，格式为 `v{package.json 版本} - {构建时间}`（如
+`v4.0.0 - 2026-07-28 15:17`），鼠标悬停可查看完整构建时间戳。
+
+- 由 `scripts/gen-version.js` 生成 `public/version.js`（**勿手动编辑**，已被 `.gitignore` 忽略）
+- 触发时机：
+  - `npm run dev` / `npm run deploy`：通过 `predev` / `predeploy` 生成
+  - `deploy.ps1`：部署前生成
+- `_headers` 对 `/version.js` 设为 `must-revalidate`，保证每次发布都取到最新版本
+
+若想升级语义化版本，修改 `package.json` 的 `version` 字段即可，构建戳会自动追加。
+> 提示：若改用 Dashboard 的 Git 构建（方式 C），需在该构建命令前也执行
+> `node scripts/gen-version.js`，否则页脚将显示 `dev`。
 
 ## 邮件接口
 

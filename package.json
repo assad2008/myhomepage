@@ -4,6 +4,9 @@
     "private": true,
     "description": "王江个人主页 - Cloudflare Pages + Pages Functions",
     "scripts": {
+        "gen:version": "node scripts/gen-version.js",
+        "predev": "npm run gen:version",
+        "predeploy": "npm run gen:version",
         "typecheck": "tsc --noEmit",
         "dev": "wrangler pages dev public",
         "deploy": "wrangler pages deploy public --project-name=myhomepage"

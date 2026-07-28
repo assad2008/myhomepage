@@ -1219,6 +1219,52 @@ textarea.form-control {
     margin-right: 0;
 }
 
+.app-version {
+    margin: 14px 0 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    color: #6f6f6f;
+    cursor: default;
+    user-select: none;
+    transition: color 0.3s ease;
+}
+
+.app-version:hover {
+    color: var(--gray-light);
+}
+
+.version-dot {
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #35c26b;
+    box-shadow: 0 0 0 0 rgba(53, 194, 107, 0.5);
+    animation: version-pulse 2.4s ease-out infinite;
+}
+
+@keyframes version-pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(53, 194, 107, 0.45);
+    }
+    70% {
+        box-shadow: 0 0 0 7px rgba(53, 194, 107, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(53, 194, 107, 0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .version-dot {
+        animation: none;
+    }
+}
+
 
 /*====================================================
     09. Back To Top

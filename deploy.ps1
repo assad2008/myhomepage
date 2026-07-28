@@ -287,6 +287,14 @@ try {
     }
 
     Write-Step '6/6 Deploy to Cloudflare Pages'
+
+    # Stamp a fresh build version so the site footer reflects this very release.
+    & node (Join-Path (Join-Path $script:ProjectRoot 'scripts') 'gen-version.js')
+    if ($LASTEXITCODE -ne 0) {
+        throw "Version generation failed (exit code $LASTEXITCODE) during deployment."
+    }
+    Write-Ok 'Build version stamped into public/version.js'
+
     $deployArguments = @('pages', 'deploy', 'public', "--project-name=$projectName")
     if ($Branch) {
         $deployArguments += "--branch=$Branch"
