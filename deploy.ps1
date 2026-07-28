@@ -293,7 +293,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Version generation failed (exit code $LASTEXITCODE) during deployment."
     }
-    Write-Ok 'Build version stamped into public/version.js'
+    Write-Ok 'Build version stamped into public/index.html'
 
     $deployArguments = @('pages', 'deploy', 'public', "--project-name=$projectName")
     if ($Branch) {

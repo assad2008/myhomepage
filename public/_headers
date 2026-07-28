@@ -8,5 +8,3 @@
   Cache-Control: public, max-age=86400
 /index.html
   Cache-Control: public, max-age=0, must-revalidate
-/version.js
-  Cache-Control: public, max-age=0, must-revalidate

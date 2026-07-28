@@ -359,12 +359,12 @@
 	(function(){
 		var $version = $("#app-version");
 		if (!$version.length) { return; }
-		var build = window.__APP_BUILD__;
-		if (build && build.display) {
-			$version.text(build.display);
-			$version.attr("title", "Build " + (build.build || "") + " · " + (build.generatedAt || ""));
+		var build = $version.attr("data-build");
+		var generated = $version.attr("data-generated");
+		if (build) {
+			$version.attr("title", "Build " + build + " \u00b7 " + (generated || ""));
 		} else {
-			$version.text("dev").attr("title", "本地开发环境");
+			$version.attr("title", "本地开发环境");
 		}
 	})();
 
