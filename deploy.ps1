@@ -1,128 +1,309 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Cloudflare Pages 一键部署脚本（Windows PowerShell 5.1+）。
+Deploy this project to Cloudflare Pages.
 
 .DESCRIPTION
-    自动完成：
-      1. 检查 npm 依赖 / wrangler / Cloudflare 登录状态
-      2. 创建 KV 命名空间 RATE_LIMIT（已存在则复用），并自动回填 wrangler.toml
-      3. 配置 Mailgun 密钥（必填 3 项 + 可选 2 项）
-      4. TypeScript 类型检查
-      5. 部署 public/ 与 functions/ 到 Cloudflare Pages
+Validates local configuration, authentication, and the target Pages project before
+optionally updating secrets and deploying the public folder.
+The script never creates Cloudflare resources or rewrites wrangler.toml.
+
+.PARAMETER SkipSecrets
+Do not prompt for Pages secrets.
+
+.PARAMETER SkipTypecheck
+Do not run TypeScript type checking.
+
+.PARAMETER SkipProjectCheck
+Do not verify that the Pages project exists before deployment.
+
+.PARAMETER Branch
+Deploy to a preview branch instead of production.
+
+.PARAMETER AccountId
+Cloudflare account ID that owns the Pages project. This value is applied only to
+the current script process as CLOUDFLARE_ACCOUNT_ID.
+
+.PARAMETER PromptForApiToken
+Securely prompt for CLOUDFLARE_API_TOKEN when one is not already available in
+the environment. The token is removed before the script exits.
 
 .NOTES
-    用法：  powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy.ps1
-    可选开关：  -SkipSecrets  跳过密钥配置（已配置过时）
+For unattended local deployment, create .deploy.vars next to this script with
+CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN. This file is ignored by Git.
 #>
-
 [CmdletBinding()]
 param(
-    [switch]$SkipSecrets
+    [switch]$SkipSecrets,
+    [switch]$SkipTypecheck,
+    [switch]$SkipProjectCheck,
+    [ValidatePattern('^[A-Za-z0-9._/-]+$')]
+    [string]$Branch,
+    [ValidatePattern('^[A-Fa-f0-9]{32}$')]
+    [string]$AccountId,
+    [switch]$PromptForApiToken
 )
 
 $ErrorActionPreference = 'Stop'
-try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
-# 定位到脚本所在目录（项目根）
-$root = $PSScriptRoot
-if (-not $root) { $root = (Get-Location).Path }
-Set-Location -LiteralPath $root
-
-function Write-Step($msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
-function Write-Ok($msg)   { Write-Host "  [OK] $msg" -ForegroundColor Green }
-function Write-Warn2($m)  { Write-Host "  [!] $m" -ForegroundColor Yellow }
-function Run($args2)      { & npx --no-install wrangler @args2 }
-
-# ---------- 0. 读取项目名 ----------
-Write-Step "0/6 读取配置"
-$wranglerToml = Join-Path $root 'wrangler.toml'
-if (-not (Test-Path -LiteralPath $wranglerToml)) { throw "未找到 wrangler.toml，请在项目根目录运行本脚本" }
-$projectName = ((Get-Content -LiteralPath $wranglerToml -Raw) | Select-String -Pattern '(?m)^\s*name\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
-Write-Ok "项目名: $projectName"
-
-# ---------- 依赖与登录 ----------
-Write-Step "1/6 检查依赖与登录状态"
-if (-not (Test-Path -LiteralPath (Join-Path $root 'node_modules'))) {
-    Write-Warn2 "node_modules 不存在，先执行 npm install ..."
-    & npm install
-}
-& npx --no-install wrangler --version *>$null
-if ($LASTEXITCODE -ne 0) { throw "wrangler 不可用，请先运行 npm install" }
-Run whoami *>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Warn2 "尚未登录 Cloudflare，将打开浏览器进行授权 ..."
-    Run login
-    Run whoami *>$null
-    if ($LASTEXITCODE -ne 0) { throw "Cloudflare 登录失败" }
-}
-Write-Ok "wrangler 已登录"
-
-# ---------- KV 命名空间 ----------
-Write-Step "2/6 KV 命名空间 RATE_LIMIT"
-$kvJson = (Run kv namespace list --output json 2>$null) -join "`n"
-$existing = @($kvJson | ConvertFrom-Json | Where-Object { $_.binding -eq 'RATE_LIMIT' })
-if ($existing.Count -gt 0) {
-    $kvId = $existing[0].id
-    Write-Ok "复用已有命名空间 id=$kvId"
-} else {
-    $created = (Run kv namespace create RATE_LIMIT --output json 2>$null) -join "`n"
-    $kvId = ($created | ConvertFrom-Json).id
-    Write-Ok "已创建命名空间 id=$kvId"
+# In PowerShell 7, native stderr can be promoted to a terminating error.
+# Wrangler commands below are evaluated by their exit code instead.
+if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+    $PSNativeCommandUseErrorActionPreference = $false
 }
 
-# 回填 wrangler.toml（占位 id 为 32 个 0）
-$wt = Get-Content -LiteralPath $wranglerToml -Raw
-if ($wt -match 'id\s*=\s*"0{32}"') {
-    $wt2 = $wt -replace 'id\s*=\s*"0{32}"', ('id = "{0}"' -f $kvId)
-    [System.IO.File]::WriteAllText($wranglerToml, $wt2, (New-Object System.Text.UTF8Encoding($false)))
-    Write-Ok "wrangler.toml 已写入真实 KV id"
-} else {
-    Write-Ok "wrangler.toml 中的 KV id 无需更新"
+$script:ProjectRoot = $PSScriptRoot
+if (-not $script:ProjectRoot) {
+    $script:ProjectRoot = (Get-Location).Path
+}
+Set-Location -LiteralPath $script:ProjectRoot
+
+# Load deployment credentials from the Git-ignored local credentials file.
+function Import-LocalDeploymentCredentials {
+    param([Parameter(Mandatory = $true)][string]$CredentialFile)
+
+    if (-not (Test-Path -LiteralPath $CredentialFile -PathType Leaf)) {
+        return
+    }
+
+    foreach ($line in Get-Content -LiteralPath $CredentialFile) {
+        $trimmedLine = $line.Trim()
+        if (-not $trimmedLine -or $trimmedLine.StartsWith('#')) {
+            continue
+        }
+
+        $match = [regex]::Match($trimmedLine, '^(CLOUDFLARE_(?:ACCOUNT_ID|API_TOKEN))=(.*)$')
+        if (-not $match.Success) {
+            throw "Invalid entry in $CredentialFile. Only CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are allowed."
+        }
+
+        $value = $match.Groups[2].Value.Trim()
+        if ($value.Length -ge 2 -and (
+            ($value.StartsWith('"') -and $value.EndsWith('"')) -or
+            ($value.StartsWith("'") -and $value.EndsWith("'"))
+        )) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            throw "The value for $($match.Groups[1].Value) in $CredentialFile cannot be empty."
+        }
+
+        if (-not (Get-Item -Path "Env:$($match.Groups[1].Value)" -ErrorAction SilentlyContinue)) {
+            Set-Item -Path "Env:$($match.Groups[1].Value)" -Value $value
+            if ($match.Groups[1].Value -eq 'CLOUDFLARE_API_TOKEN') {
+                $script:ApiTokenSetByScript = $true
+            }
+        }
+    }
 }
 
-# ---------- 密钥 ----------
-function Convert-Secure([System.Security.SecureString]$s) {
-    $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($s)
-    try { return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
-    finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
-}
-function Set-Secret($key, [System.Security.SecureString]$val) {
-    $plain = Convert-Secure $val
-    $plain | Run pages secret put $key --project-name $projectName *>$null | Out-Null
-    Write-Ok "已设置密钥 $key"
+$script:ApiTokenSetByScript = $false
+Import-LocalDeploymentCredentials -CredentialFile (Join-Path $script:ProjectRoot '.deploy.vars')
+
+# Use the explicitly supplied account ID without persisting it to the system.
+if ($AccountId) {
+    $env:CLOUDFLARE_ACCOUNT_ID = $AccountId
 }
 
-if ($SkipSecrets) {
-    Write-Step "3/6 密钥（已跳过）"
-} else {
-    Write-Step "3/6 配置 Mailgun 密钥（回车=保留原值/跳过）"
-    $v = Read-Host -Prompt "  MAILGUN_API_KEY (必填)" -AsSecureString
-    if ($v.Length -gt 0) { Set-Secret 'MAILGUN_API_KEY' $v }
-    $v = Read-Host -Prompt "  MAILGUN_DOMAIN (必填, 如 mg.wangjiang.me)" -AsSecureString
-    if ($v.Length -gt 0) { Set-Secret 'MAILGUN_DOMAIN' $v }
-    $v = Read-Host -Prompt "  MAIL_RECIPIENT (必填, 收件邮箱)" -AsSecureString
-    if ($v.Length -gt 0) { Set-Secret 'MAIL_RECIPIENT' $v }
-    $v = Read-Host -Prompt "  MAILGUN_REGION (可选: us/eu, 默认 us)" -AsSecureString
-    if ($v.Length -gt 0) { Set-Secret 'MAILGUN_REGION' $v }
-    $v = Read-Host -Prompt "  RESTRICT_CN_ONLY (可选: true/false, 默认 true)" -AsSecureString
-    if ($v.Length -gt 0) { Set-Secret 'RESTRICT_CN_ONLY' $v }
+# Prompt for an API token without exposing it in command history or source code.
+function Set-SessionApiToken {
+    $secureToken = Read-Host -Prompt '  CLOUDFLARE_API_TOKEN' -AsSecureString
+    if ($secureToken.Length -eq 0) {
+        throw 'CLOUDFLARE_API_TOKEN cannot be empty.'
+    }
+
+    $pointer = [IntPtr]::Zero
+    try {
+        $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
+        $env:CLOUDFLARE_API_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+        $script:ApiTokenSetByScript = $true
+    }
+    finally {
+        if ($pointer -ne [IntPtr]::Zero) {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
+        }
+    }
 }
 
-# ---------- 类型检查 ----------
-Write-Step "4/6 TypeScript 类型检查"
-& npx tsc --noEmit
-if ($LASTEXITCODE -ne 0) { throw "类型检查未通过，请先修复错误再部署" }
-Write-Ok "类型检查通过"
+if ($PromptForApiToken -and -not $env:CLOUDFLARE_API_TOKEN) {
+    Set-SessionApiToken
+}
 
-# ---------- 部署 ----------
-Write-Step "5/6 部署到 Cloudflare Pages"
-Run pages deploy public --project-name $projectName
-if ($LASTEXITCODE -ne 0) { throw "部署失败" }
-Write-Ok "部署完成"
+# Write a deployment step heading.
+function Write-Step {
+    param([Parameter(Mandatory = $true)][string]$Message)
+    Write-Host "`n=== $Message ===" -ForegroundColor Cyan
+}
 
-# ---------- 收尾 ----------
-Write-Step "6/6 完成"
-Write-Host "  查看项目: npx wrangler pages project list" -ForegroundColor DarkGray
-Write-Host "  实时日志: npx wrangler pages deployment tail --project-name $projectName" -ForegroundColor DarkGray
-Write-Host "  自定义域名请在 Cloudflare Dashboard -> Pages -> $projectName -> Custom domains 中配置。" -ForegroundColor DarkGray
+# Write a success message.
+function Write-Ok {
+    param([Parameter(Mandatory = $true)][string]$Message)
+    Write-Host "  [OK] $Message" -ForegroundColor Green
+}
+
+# Write a warning message.
+function Write-WarnMessage {
+    param([Parameter(Mandatory = $true)][string]$Message)
+    Write-Host "  [!] $Message" -ForegroundColor Yellow
+}
+
+# Run local Wrangler and fail when the process returns a nonzero exit code.
+function Invoke-Wrangler {
+    param(
+        [Parameter(Mandatory = $true, ValueFromRemainingArguments = $true)]
+        [string[]]$Arguments
+    )
+
+    & npx --no-install wrangler @Arguments
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        throw "Wrangler command failed (exit code $exitCode): npx wrangler $($Arguments -join ' ')"
+    }
+}
+
+# Run local Wrangler and return stdout for JSON query commands.
+function Get-WranglerOutput {
+    param(
+        [Parameter(Mandatory = $true, ValueFromRemainingArguments = $true)]
+        [string[]]$Arguments
+    )
+
+    $output = & npx --no-install wrangler @Arguments 2>$null
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        $details = ($output | Out-String).Trim()
+        throw "Wrangler command failed (exit code $exitCode): npx wrangler $($Arguments -join ' ')`n$details"
+    }
+
+    return ($output | Out-String).Trim()
+}
+
+# Read the Pages project name from wrangler.toml.
+function Get-ProjectName {
+    param([Parameter(Mandatory = $true)][string]$ConfigPath)
+
+    $configContent = Get-Content -LiteralPath $ConfigPath -Raw
+    $match = [regex]::Match($configContent, '(?m)^\s*name\s*=\s*"([^"]+)"\s*$')
+    if (-not $match.Success) {
+        throw 'wrangler.toml does not contain a valid name value.'
+    }
+
+    return $match.Groups[1].Value
+}
+
+try {
+    $wranglerConfig = Join-Path $script:ProjectRoot 'wrangler.toml'
+    $outputDirectory = Join-Path $script:ProjectRoot 'public'
+
+    Write-Step '1/6 Validate local configuration'
+    if (-not (Test-Path -LiteralPath $wranglerConfig -PathType Leaf)) {
+        throw 'wrangler.toml was not found. Run this script from the project root.'
+    }
+    if (-not (Test-Path -LiteralPath $outputDirectory -PathType Container)) {
+        throw 'The public directory was not found.'
+    }
+    if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
+        throw 'npx was not found. Install Node.js LTS and reopen PowerShell.'
+    }
+
+    $projectName = Get-ProjectName -ConfigPath $wranglerConfig
+    Write-Ok "Pages project: $projectName"
+    if ($env:CLOUDFLARE_ACCOUNT_ID) {
+        Write-Ok "Cloudflare account: $env:CLOUDFLARE_ACCOUNT_ID"
+    }
+    else {
+        Write-WarnMessage 'No explicit Cloudflare account ID was supplied. Wrangler will choose the current default account.'
+    }
+
+    Write-Step '2/6 Validate Wrangler and authentication'
+    Invoke-Wrangler --version
+    try {
+        Invoke-Wrangler whoami
+    }
+    catch {
+        Write-WarnMessage 'Cloudflare login is required. Opening the authorization flow.'
+        Invoke-Wrangler login
+        Invoke-Wrangler whoami
+    }
+    Write-Ok 'Cloudflare authentication is valid'
+
+    if (-not $SkipProjectCheck) {
+        Write-Step '3/6 Verify target Pages project'
+        $projectJson = Get-WranglerOutput pages project list --json
+        try {
+            $projects = $projectJson | ConvertFrom-Json
+        }
+        catch {
+            throw "Unable to parse the Pages project list: $projectJson"
+        }
+
+        # Wrangler pages project list --json uses display-oriented property names.
+        $projectNames = @(
+            $projects |
+                ForEach-Object { $_.'Project Name' } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        )
+        if ($projectNames -notcontains $projectName) {
+            $availableNames = if ($projectNames.Count -gt 0) { $projectNames -join ', ' } else { 'none' }
+            throw "Pages project '$projectName' was not found. Visible projects: $availableNames. Check wrangler.toml, CLOUDFLARE_API_TOKEN, and the Cloudflare account."
+        }
+        Write-Ok "Pages project $projectName exists"
+    }
+    else {
+        Write-Step '3/6 Verify target Pages project (skipped)'
+        Write-WarnMessage 'The deployment command will still validate the project name.'
+    }
+
+    if ($SkipSecrets) {
+        Write-Step '4/6 Configure secrets (skipped)'
+    }
+    else {
+        $devVarsFile = Join-Path $script:ProjectRoot '.dev.vars'
+        if (Test-Path -LiteralPath $devVarsFile -PathType Leaf) {
+            Write-Step '4/6 Import secrets from .dev.vars'
+            Invoke-Wrangler pages secret bulk $devVarsFile --project-name $projectName
+            Write-Ok 'Secrets from .dev.vars were imported into Cloudflare Pages'
+        }
+        else {
+            Write-Step '4/6 Configure Mailgun secrets'
+            Write-WarnMessage '.dev.vars was not found. Wrangler will securely prompt for each secret.'
+            $secretNames = @('MAILGUN_API_KEY', 'MAILGUN_DOMAIN', 'MAIL_RECIPIENT', 'MAILGUN_REGION', 'RESTRICT_CN_ONLY')
+            foreach ($secretName in $secretNames) {
+                Invoke-Wrangler pages secret put $secretName --project-name $projectName
+            }
+        }
+    }
+
+    if ($SkipTypecheck) {
+        Write-Step '5/6 TypeScript type check (skipped)'
+    }
+    else {
+        Write-Step '5/6 TypeScript type check'
+        & npm run typecheck
+        if ($LASTEXITCODE -ne 0) {
+            throw "TypeScript type check failed (exit code $LASTEXITCODE)."
+        }
+        Write-Ok 'TypeScript type check passed'
+    }
+
+    Write-Step '6/6 Deploy to Cloudflare Pages'
+    $deployArguments = @('pages', 'deploy', 'public', "--project-name=$projectName")
+    if ($Branch) {
+        $deployArguments += "--branch=$Branch"
+        Write-Host "  Target: preview branch $Branch" -ForegroundColor DarkGray
+    }
+    else {
+        Write-Host '  Target: production' -ForegroundColor DarkGray
+    }
+    Invoke-Wrangler @deployArguments
+    Write-Ok 'Deployment completed'
+}
+catch {
+    Write-Host "`nDeployment stopped: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
+finally {
+    if ($script:ApiTokenSetByScript) {
+        Remove-Item -Path Env:CLOUDFLARE_API_TOKEN -ErrorAction SilentlyContinue
+    }
+}

@@ -7,6 +7,8 @@
 !.env.example
 .dev.vars
 !.dev.vars.example
+.deploy.vars
+!.deploy.vars.example
 
 # 日志（旧版文件日志，已改为 Workers console 日志）
 /logs/

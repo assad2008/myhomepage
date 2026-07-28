@@ -1,0 +1,4 @@
+# Local Cloudflare deployment credentials. Copy this file to .deploy.vars,
+# replace the placeholders, and keep .deploy.vars private.
+CLOUDFLARE_ACCOUNT_ID=your-32-character-account-id
+CLOUDFLARE_API_TOKEN=your-cloudflare-api-token

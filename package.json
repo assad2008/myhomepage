@@ -9,8 +9,8 @@
         "deploy": "wrangler pages deploy public --project-name=myhomepage"
     },
     "devDependencies": {
-        "@cloudflare/workers-types": "^4.20250408.0",
+        "@cloudflare/workers-types": "^5.20260728.1",
         "typescript": "^5.6.3",
-        "wrangler": "^3.99.0"
+        "wrangler": "^4.114.0"
     }
 }
