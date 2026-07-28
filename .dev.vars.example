@@ -10,3 +10,7 @@ MAIL_RECIPIENT=your-email@example.com
 
 # 可选：地区限制开关。默认 true（仅允许中国大陆 CN 发送）
 # RESTRICT_CN_ONLY=true
+
+# 可选：Cloudflare 鉴权（本地用 wrangler 调试/部署时使用；deploy.ps1 走 OAuth 登录则无需）
+CLOUDFLARE_ACCOUNT_ID=your-cloudflare-account-id
+CLOUDFLARE_API_TOKEN=your-cloudflare-api-token
